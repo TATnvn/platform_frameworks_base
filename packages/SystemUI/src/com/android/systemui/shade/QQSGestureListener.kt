@@ -19,14 +19,13 @@ package com.android.systemui.shade
 import android.content.Context
 import android.database.ContentObserver
 import android.os.PowerManager
-import android.provider.Settings;
+import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
 import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.plugins.FalsingManager
-import com.android.systemui.plugins.statusbar.StatusBarStateController
-import com.android.systemui.statusbar.StatusBarState
-import com.android.systemui.statusbar.phone.CentralSurfaces
+import com.android.systemui.scene.domain.interactor.SceneInteractor
+import com.android.systemui.scene.shared.model.Scenes
 import javax.inject.Inject
 
 @SysUISingleton
@@ -34,8 +33,7 @@ class QQSGestureListener @Inject constructor(
         private val context: Context,
         private val falsingManager: FalsingManager,
         private val powerManager: PowerManager,
-        private val statusBarStateController: StatusBarStateController,
-        private val centralSurfaces: CentralSurfaces,
+        private val sceneInteractor: SceneInteractor,
 ) : GestureDetector.SimpleOnGestureListener() {
 
     private var doubleTapToSleepEnabled = false
@@ -60,18 +58,22 @@ class QQSGestureListener @Inject constructor(
     }
 
     override fun onDoubleTapEvent(e: MotionEvent): Boolean {
-        // Go to sleep when double tapping the QQS status bar
-        // or lockscreen (keyguard showing, but not bouncer)
+        val currentScene = sceneInteractor.currentScene.value
+
         if (
-            e.actionMasked == MotionEvent.ACTION_UP &&
-                !statusBarStateController.isDozing &&
-                doubleTapToSleepEnabled &&
-                (e.getY() < quickQsOffsetHeight ||
-                    statusBarStateController.getState() == StatusBarState.KEYGUARD &&
-                        !centralSurfaces.isBouncerShowing()) &&
-                !falsingManager.isFalseDoubleTap
+            e.actionMasked != MotionEvent.ACTION_UP ||
+                currentScene == Scenes.Dream ||
+                !doubleTapToSleepEnabled ||
+                falsingManager.isFalseDoubleTap
         ) {
-            powerManager.goToSleep(e.getEventTime())
+            return false
+        }
+
+        val isStatusBar = e.getY() < quickQsOffsetHeight
+        val isLockscreen = currentScene == Scenes.Lockscreen
+
+        if (isStatusBar || isLockscreen) {
+            powerManager.goToSleep(e.eventTime, PowerManager.GO_TO_SLEEP_REASON_APPLICATION, 0)
             return true
         }
         return false
